@@ -1,49 +1,89 @@
-# SecDev Course Template
+# Сервис Управления Устройствами Умного Дома
 
-Стартовый шаблон для студенческого репозитория (HSE SecDev 2025).
+Проект для курса SecDev (HSE SecDev 2025), представляющий собой API для управления устройствами в умном доме.
+
+## Концепция
+
+Сервис позволяет добавлять, получать и управлять различными умными устройствами (например, лампочки, термостаты, камеры). Каждое устройство имеет уникальный идентификатор, имя и статус.
 
 ## Быстрый старт
+
+Для запуска сервиса локально выполните следующие шаги:
+
 ```bash
+# Создание и активация виртуального окружения
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
+source .venv/bin/activate  # Для Windows: .venv\Scripts\Activate.ps1
+
+# Установка зависимостей
 pip install -r requirements.txt -r requirements-dev.txt
+
+# Установка pre-commit хуков
 pre-commit install
+
+# Запуск веб-сервера
 uvicorn app.main:app --reload
 ```
+Сервер будет доступен по адресу `http://127.0.0.1:8000`.
+
+## Конфигурация и логи
+
+- **Конфигурация**: Основные параметры, такие как хост и порт, могут быть переопределены через переменные окружения (см. `.env.example`).
+- **Логи**: Приложение выводит логи в `stdout` в формате JSON. В продуктиве рекомендуется собирать их с помощью специализированных инструментов (Fluentd, Logstash).
 
 ## Ритуал перед PR
+
+Перед созданием Pull Request убедитесь, что все проверки проходят:
+
 ```bash
+# Автоформатирование и линтинг
 ruff check --fix .
 black .
 isort .
+
+# Запуск тестов
 pytest -q
+
+# Запуск всех pre-commit хуков
 pre-commit run --all-files
 ```
 
 ## Тесты
+
 ```bash
-pytest -q
+# Запуск всех тестов
+pytest
+
+# Запуск тестов с отчётом о покрытии
+pytest --cov=app
 ```
 
-## CI
-В репозитории настроен workflow **CI** (GitHub Actions) — required check для `main`.
-Badge добавится автоматически после загрузки шаблона в GitHub.
+## CI/CD
 
-## Контейнеры
+В репозитории настроен CI-конвейер (GitHub Actions), который автоматически запускает проверки при каждом push и pull request в ветку `main`.
+
+## Контейнеризация
+
 ```bash
-docker build -t secdev-app .
-docker run --rm -p 8000:8000 secdev-app
-# или
+# Сборка образа
+docker build -t smart-home-app .
+
+# Запуск контейнера
+docker run --rm -p 8000:8000 --env-file .env.example smart-home-app
+
+# Или с помощью Docker Compose
 docker compose up --build
 ```
 
-## Эндпойнты
-- `GET /health` → `{"status": "ok"}`
-- `POST /items?name=...` — демо-сущность
-- `GET /items/{id}`
+## Ключевые эндпойнты
+
+- `GET /health` — Проверка состояния сервиса.
+- `POST /items?name=...` — Создание нового устройства.
+- `GET /items/{id}` — Получение информации об устройстве.
 
 ## Формат ошибок
-Все ошибки — JSON-обёртка:
+
+Все ошибки возвращаются в едином JSON-формате:
 ```json
 {
   "error": {"code": "not_found", "message": "item not found"}
