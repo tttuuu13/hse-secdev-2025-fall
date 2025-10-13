@@ -35,23 +35,28 @@ def health():
 
 
 # Example minimal entity (for tests/demo)
-_DB = {"items": []}
+_DB = {"issues": []}
 
 
-@app.post("/items")
-def create_item(name: str):
-    if not name or len(name) > 100:
+@app.post("/issues")
+def create_issue(title: str):
+    if not title or len(title) > 100:
         raise ApiError(
-            code="validation_error", message="name must be 1..100 chars", status=422
+            code="validation_error", message="title must be 1..100 chars", status=422
         )
-    item = {"id": len(_DB["items"]) + 1, "name": name}
-    _DB["items"].append(item)
-    return item
+    issue = {"id": len(_DB["issues"]) + 1, "title": title}
+    _DB["issues"].append(issue)
+    return issue
 
 
-@app.get("/items/{item_id}")
-def get_item(item_id: int):
-    for it in _DB["items"]:
-        if it["id"] == item_id:
+@app.get("/issues")
+def get_issues():
+    return _DB
+
+
+@app.get("/issues/{issue_id}")
+def get_issue(issue_id: int):
+    for it in _DB["issues"]:
+        if it["id"] == issue_id:
             return it
-    raise ApiError(code="not_found", message="item not found", status=404)
+    raise ApiError(code="not_found", message="issue not found", status=404)
