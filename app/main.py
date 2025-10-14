@@ -2,6 +2,9 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from . import schemas
@@ -14,11 +17,17 @@ from .shared.errors import AppError, ConflictError, ForbiddenError, NotFoundErro
 
 Base.metadata.create_all(bind=engine)
 
+# Rate Limiter
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="Bug Lite",
     version="0.1.0",
     description="A simplified bug tracker.",
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 router = APIRouter(prefix="/api/v1")
 
@@ -46,7 +55,6 @@ def get_current_user(
 ) -> models.User:
     """Gets user from DB based on X-User-Id header."""
     if x_user_id is None:
-        # This can be a custom error too, but let's keep it simple for now
         raise HTTPException(status_code=401, detail="X-User-Id header missing")
     user = db_repository.get_user(db, user_id=x_user_id)
     if user is None:
@@ -64,8 +72,11 @@ def get_user_service(db: Session = Depends(get_db)) -> UserService:
 
 # Endpoints
 @router.post("/users/", response_model=schemas.User)
+@limiter.limit("10/minute")
 def create_user(
-    user: schemas.UserCreate, user_service: UserService = Depends(get_user_service)
+    request: Request,
+    user: schemas.UserCreate,
+    user_service: UserService = Depends(get_user_service),
 ):
     return user_service.create_user(user)
 

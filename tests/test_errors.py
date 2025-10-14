@@ -1,3 +1,6 @@
+from app.main import limiter
+
+
 def test_unauthorized_access(client):
     # No X-User-Id header - this still raises a default HTTPException
     r = client.get("/api/v1/issues/")
@@ -115,3 +118,28 @@ def test_duplicate_email(client):
     r = client.post("/api/v1/users/", json=user2_data)
     assert r.status_code == 409
     assert r.json()["code"] == "CONFLICT"
+
+
+def test_rate_limit_user_creation(client):
+    try:
+        limiter.enabled = True
+        # The limit is 10 per minute. We'll send 11 requests.
+        for i in range(10):
+            user_data = {
+                "username": f"user_rate_{i}",
+                "email": f"rate_{i}@example.com",
+                "password": "password123",
+            }
+            r = client.post("/api/v1/users/", json=user_data)
+            assert r.status_code == 200
+
+        # The 11th request should be blocked
+        user_data = {
+            "username": "user_rate_11",
+            "email": "rate_11@example.com",
+            "password": "password123",
+        }
+        r = client.post("/api/v1/users/", json=user_data)
+        assert r.status_code == 429
+    finally:
+        limiter.enabled = False
