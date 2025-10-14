@@ -1,10 +1,16 @@
-from typing import List
+from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from . import crud, schemas
-from .database import Base, SessionLocal, engine
+from . import schemas
+from .adapters import db_repository
+from .database import Base, engine, get_db
+from .domain import models
+from .services.issue_service import IssueService
+from .services.user_service import UserService
+from .shared.errors import AppError, ConflictError, ForbiddenError, NotFoundError
 
 Base.metadata.create_all(bind=engine)
 
@@ -14,37 +20,102 @@ app = FastAPI(
     description="A simplified bug tracker.",
 )
 
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+router = APIRouter(prefix="/api/v1")
 
 
-@app.post("/users/", response_model=schemas.User)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = crud.get_user_by_email(db, email=user.email)
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    return crud.create_user(db=db, user=user)
+# Exception Handler
+@app.exception_handler(AppError)
+async def app_exception_handler(request: Request, exc: AppError):
+    status_code = 400
+    if isinstance(exc, NotFoundError):
+        status_code = 404
+    elif isinstance(exc, ForbiddenError):
+        status_code = 403
+    elif isinstance(exc, ConflictError):
+        status_code = 409
+
+    return JSONResponse(
+        status_code=status_code,
+        content={"code": exc.code, "message": exc.message},
+    )
 
 
-@app.get("/users/", response_model=List[schemas.User])
-def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    users = crud.get_users(db, skip=skip, limit=limit)
-    return users
+# Dependencies
+def get_current_user(
+    x_user_id: Optional[int] = Header(None), db: Session = Depends(get_db)
+) -> models.User:
+    """Gets user from DB based on X-User-Id header."""
+    if x_user_id is None:
+        # This can be a custom error too, but let's keep it simple for now
+        raise HTTPException(status_code=401, detail="X-User-Id header missing")
+    user = db_repository.get_user(db, user_id=x_user_id)
+    if user is None:
+        raise NotFoundError("User")
+    return user
 
 
-@app.post("/users/{user_id}/issues/", response_model=schemas.Issue)
-def create_issue_for_user(
-    user_id: int, issue: schemas.IssueCreate, db: Session = Depends(get_db)
+def get_issue_service(db: Session = Depends(get_db)) -> IssueService:
+    return IssueService(db)
+
+
+def get_user_service(db: Session = Depends(get_db)) -> UserService:
+    return UserService(db)
+
+
+# Endpoints
+@router.post("/users/", response_model=schemas.User)
+def create_user(
+    user: schemas.UserCreate, user_service: UserService = Depends(get_user_service)
 ):
-    return crud.create_user_issue(db=db, issue=issue, user_id=user_id)
+    return user_service.create_user(user)
 
 
-@app.get("/issues/", response_model=List[schemas.Issue])
-def read_issues(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    issues = crud.get_issues(db, skip=skip, limit=limit)
-    return issues
+@router.post("/issues/", response_model=schemas.Issue)
+def create_issue(
+    issue: schemas.IssueCreate,
+    current_user: models.User = Depends(get_current_user),
+    issue_service: IssueService = Depends(get_issue_service),
+):
+    return issue_service.create_issue(issue, current_user)
+
+
+@router.get("/issues/", response_model=List[schemas.Issue])
+def read_issues(
+    current_user: models.User = Depends(get_current_user),
+    issue_service: IssueService = Depends(get_issue_service),
+    skip: int = 0,
+    limit: int = 100,
+):
+    return issue_service.get_issues_by_owner(current_user, skip, limit)
+
+
+@router.get("/issues/{issue_id}", response_model=schemas.Issue)
+def read_issue(
+    issue_id: int,
+    current_user: models.User = Depends(get_current_user),
+    issue_service: IssueService = Depends(get_issue_service),
+):
+    return issue_service.get_issue_by_id(issue_id, current_user)
+
+
+@router.patch("/issues/{issue_id}", response_model=schemas.Issue)
+def update_issue(
+    issue_id: int,
+    issue_update: schemas.IssueUpdate,
+    current_user: models.User = Depends(get_current_user),
+    issue_service: IssueService = Depends(get_issue_service),
+):
+    return issue_service.update_issue(issue_id, issue_update, current_user)
+
+
+@router.delete("/issues/{issue_id}", status_code=204)
+def delete_issue(
+    issue_id: int,
+    current_user: models.User = Depends(get_current_user),
+    issue_service: IssueService = Depends(get_issue_service),
+):
+    issue_service.delete_issue(issue_id, current_user)
+    return
+
+
+app.include_router(router)
