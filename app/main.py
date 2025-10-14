@@ -2,23 +2,20 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from . import schemas
 from .adapters import db_repository
 from .database import Base, engine, get_db
 from .domain import models
+from .limiter import limiter
 from .services.issue_service import IssueService
 from .services.user_service import UserService
 from .shared.errors import AppError, ConflictError, ForbiddenError, NotFoundError
 
 Base.metadata.create_all(bind=engine)
-
-# Rate Limiter
-limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="Bug Lite",
