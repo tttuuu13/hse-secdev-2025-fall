@@ -27,6 +27,11 @@ class IssueCreate(IssueBase):
     pass
 
 
+class IssueUpdate(BaseModel):
+    title: str | None = None
+    status: str | None = None
+
+
 class Issue(IssueBase):
     id: int
     owner_id: int
@@ -47,6 +52,7 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
+    role: str
     issues: List[Issue] = []
 
     model_config = {"from_attributes": True}
