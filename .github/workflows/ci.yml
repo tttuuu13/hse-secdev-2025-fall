@@ -25,7 +25,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt || true
           pip install -r requirements-dev.txt || true
-          pip install ruff black isort pytest pre-commit
+          pip install ruff black isort pytest pre-commit pip-audit
       - name: Lint & format
         run: |
           ruff check --output-format=github .
@@ -33,5 +33,7 @@ jobs:
           isort --check-only .
       - name: Tests
         run: pytest -q
+      - name: Scan dependencies for vulnerabilities
+        run: pip-audit -r requirements.txt
       - name: Pre-commit (all files)
         run: pre-commit run --all-files --show-diff-on-failure
