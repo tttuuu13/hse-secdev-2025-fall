@@ -1,34 +1,41 @@
-from fastapi.testclient import TestClient
+def test_create_and_get_issue(client):
+    # First, create a user
+    user_data = {
+        "username": "testuser",
+        "email": "test@example.com",
+        "password": "password",
+    }
+    r = client.post("/users/", json=user_data)
+    assert r.status_code == 200
+    user = r.json()
+    user_id = user["id"]
 
-from app.main import app
-
-client = TestClient(app)
-
-
-def test_create_and_get_issue():
-    r = client.post("/issues", params={"title": "Test Issue"})
+    # Now, create an issue for that user
+    issue_data = {"title": "Test Issue", "status": "open"}
+    r = client.post(f"/users/{user_id}/issues/", json=issue_data)
     assert r.status_code == 200
     issue = r.json()
     assert "id" in issue
     assert issue["title"] == "Test Issue"
-    issue_id = issue["id"]
-
-    r = client.get(f"/issues/{issue_id}")
-    assert r.status_code == 200
-    issue2 = r.json()
-    assert issue == issue2
+    assert issue["owner_id"] == user_id
 
 
-def test_get_all_issues():
-    from app.main import _DB
+def test_get_all_issues(client):
+    # Create a user and some issues
+    user_data = {
+        "username": "testuser2",
+        "email": "test2@example.com",
+        "password": "password",
+    }
+    r = client.post("/users/", json=user_data)
+    user_id = r.json()["id"]
+    client.post(f"/users/{user_id}/issues/", json={"title": "First", "status": "open"})
+    client.post(
+        f"/users/{user_id}/issues/", json={"title": "Second", "status": "closed"}
+    )
 
-    _DB["issues"] = []
-
-    client.post("/issues", params={"title": "First"})
-    client.post("/issues", params={"title": "Second"})
-
-    r = client.get("/issues")
+    r = client.get("/issues/")
     assert r.status_code == 200
     body = r.json()
-    assert "issues" in body
-    assert len(body["issues"]) == 2
+    assert isinstance(body, list)
+    assert len(body) == 2

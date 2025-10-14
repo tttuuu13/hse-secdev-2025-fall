@@ -1,62 +1,50 @@
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from typing import List
 
-app = FastAPI(title="SecDev Course App", version="0.1.0")
+from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy.orm import Session
 
+from . import crud, schemas
+from .database import Base, SessionLocal, engine
 
-class ApiError(Exception):
-    def __init__(self, code: str, message: str, status: int = 400):
-        self.code = code
-        self.message = message
-        self.status = status
+Base.metadata.create_all(bind=engine)
 
-
-@app.exception_handler(ApiError)
-async def api_error_handler(request: Request, exc: ApiError):
-    return JSONResponse(
-        status_code=exc.status,
-        content={"error": {"code": exc.code, "message": exc.message}},
-    )
+app = FastAPI(
+    title="Bug Lite",
+    version="0.1.0",
+    description="A simplified bug tracker.",
+)
 
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    # Normalize FastAPI HTTPException into our error envelope
-    detail = exc.detail if isinstance(exc.detail, str) else "http_error"
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": {"code": "http_error", "message": detail}},
-    )
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+@app.post("/users/", response_model=schemas.User)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = crud.get_user_by_email(db, email=user.email)
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    return crud.create_user(db=db, user=user)
 
 
-# Example minimal entity (for tests/demo)
-_DB = {"issues": []}
+@app.get("/users/", response_model=List[schemas.User])
+def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    users = crud.get_users(db, skip=skip, limit=limit)
+    return users
 
 
-@app.post("/issues")
-def create_issue(title: str):
-    if not title or len(title) > 100:
-        raise ApiError(
-            code="validation_error", message="title must be 1..100 chars", status=422
-        )
-    issue = {"id": len(_DB["issues"]) + 1, "title": title}
-    _DB["issues"].append(issue)
-    return issue
+@app.post("/users/{user_id}/issues/", response_model=schemas.Issue)
+def create_issue_for_user(
+    user_id: int, issue: schemas.IssueCreate, db: Session = Depends(get_db)
+):
+    return crud.create_user_issue(db=db, issue=issue, user_id=user_id)
 
 
-@app.get("/issues")
-def get_issues():
-    return _DB
-
-
-@app.get("/issues/{issue_id}")
-def get_issue(issue_id: int):
-    for it in _DB["issues"]:
-        if it["id"] == issue_id:
-            return it
-    raise ApiError(code="not_found", message="issue not found", status=404)
+@app.get("/issues/", response_model=List[schemas.Issue])
+def read_issues(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    issues = crud.get_issues(db, skip=skip, limit=limit)
+    return issues
