@@ -85,7 +85,12 @@ def test_read_issue_by_id(client):
     # Check for 404
     r = client.get("/api/v1/issues/9999", headers=headers1)
     assert r.status_code == 404
-    assert r.json()["code"] == "NOT_FOUND"
+    response_json = r.json()
+    assert response_json["code"] == "NOT_FOUND"
+    assert response_json["title"] == "Not Found"
+    assert response_json["status"] == 404
+    assert response_json["detail"] == "Issue not found"
+    assert "correlation_id" in response_json
 
     # Create user 2
     user2_data = {

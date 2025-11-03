@@ -2,14 +2,23 @@ def test_unauthorized_access(client):
     # No X-User-Id header - this still raises a default HTTPException
     r = client.get("/api/v1/issues/")
     assert r.status_code == 401
-    assert r.json() == {"detail": "X-User-Id header missing"}
+    response_json = r.json()
+    assert response_json["title"] == "X-User-Id header missing"
+    assert response_json["status"] == 401
+    assert response_json["detail"] == "X-User-Id header missing"
+    assert "correlation_id" in response_json
 
 
 def test_user_not_found(client):
     headers = {"X-User-Id": "9999"}
     r = client.get("/api/v1/issues/", headers=headers)
     assert r.status_code == 404
-    assert r.json()["code"] == "NOT_FOUND"
+    response_json = r.json()
+    assert response_json["code"] == "NOT_FOUND"
+    assert response_json["title"] == "Not Found"
+    assert response_json["status"] == 404
+    assert response_json["detail"] == "User not found"
+    assert "correlation_id" in response_json
 
 
 def test_owner_only_access(client):
@@ -41,12 +50,22 @@ def test_owner_only_access(client):
     update_data = {"title": "Hacked"}
     r = client.patch(f"/api/v1/issues/{issue_id}", json=update_data, headers=headers2)
     assert r.status_code == 403
-    assert r.json()["code"] == "FORBIDDEN"
+    response_json = r.json()
+    assert response_json["code"] == "FORBIDDEN"
+    assert response_json["title"] == "Forbidden"
+    assert response_json["status"] == 403
+    assert response_json["detail"] == "Not enough permissions"
+    assert "correlation_id" in response_json
 
     # User 2 tries to delete User 1's issue
     r = client.delete(f"/api/v1/issues/{issue_id}", headers=headers2)
     assert r.status_code == 403
-    assert r.json()["code"] == "FORBIDDEN"
+    response_json = r.json()
+    assert response_json["code"] == "FORBIDDEN"
+    assert response_json["title"] == "Forbidden"
+    assert response_json["status"] == 403
+    assert response_json["detail"] == "Not enough permissions"
+    assert "correlation_id" in response_json
 
 
 def test_admin_override(client, session):
@@ -114,4 +133,9 @@ def test_duplicate_email(client):
     }
     r = client.post("/api/v1/users/", json=user2_data)
     assert r.status_code == 409
-    assert r.json()["code"] == "CONFLICT"
+    response_json = r.json()
+    assert response_json["code"] == "CONFLICT"
+    assert response_json["title"] == "Conflict"
+    assert response_json["status"] == 409
+    assert response_json["detail"] == "Email already registered"
+    assert "correlation_id" in response_json

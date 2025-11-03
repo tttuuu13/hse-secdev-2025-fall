@@ -1,8 +1,9 @@
+import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
 
@@ -23,7 +24,28 @@ app = FastAPI(
     description="A simplified bug tracker.",
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    correlation_id = str(uuid.uuid4())
+    retry_after_value = getattr(
+        exc, "retry_after", 60
+    )  # Устанавливаем значение по умолчанию 60 секунд
+    headers = {"Retry-After": str(int(retry_after_value))}
+
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={
+            "type": f"https://httpstatuses.com/{status.HTTP_429_TOO_MANY_REQUESTS}",
+            "title": "Too Many Requests",
+            "status": status.HTTP_429_TOO_MANY_REQUESTS,
+            "detail": "Rate limit exceeded: " + exc.detail,
+            "instance": request.url.path,
+            "correlation_id": correlation_id,
+        },
+        headers=headers,
+    )
 
 
 router = APIRouter(prefix="/api/v1")
@@ -33,16 +55,62 @@ router = APIRouter(prefix="/api/v1")
 @app.exception_handler(AppError)
 async def app_exception_handler(request: Request, exc: AppError):
     status_code = 400
+    title = "Bad Request"
+    detail = exc.message
+
     if isinstance(exc, NotFoundError):
         status_code = 404
+        title = "Not Found"
     elif isinstance(exc, ForbiddenError):
         status_code = 403
+        title = "Forbidden"
     elif isinstance(exc, ConflictError):
         status_code = 409
+        title = "Conflict"
 
     return JSONResponse(
         status_code=status_code,
-        content={"code": exc.code, "message": exc.message},
+        content={
+            "type": f"https://httpstatuses.com/{status_code}",
+            "title": title,
+            "status": status_code,
+            "detail": detail,
+            "instance": request.url.path,
+            "correlation_id": exc.correlation_id,  # Use correlation_id from AppError
+            "code": exc.code,  # Keep 'code' for AppError subclasses
+        },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    correlation_id = str(uuid.uuid4())
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "type": f"https://httpstatuses.com/{exc.status_code}",
+            "title": exc.detail,
+            "status": exc.status_code,
+            "detail": exc.detail,
+            "instance": request.url.path,
+            "correlation_id": correlation_id,
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    correlation_id = str(uuid.uuid4())
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "type": f"https://httpstatuses.com/{status.HTTP_422_UNPROCESSABLE_ENTITY}",
+            "title": "Validation Error",
+            "status": status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "detail": exc.errors(),
+            "instance": request.url.path,
+            "correlation_id": correlation_id,
+        },
     )
 
 
@@ -69,7 +137,7 @@ def get_user_service(db: Session = Depends(get_db)) -> UserService:
 
 # Endpoints
 @router.post("/users/", response_model=schemas.User)
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")  # Updated rate limit as per ADR-002
 def create_user(
     request: Request,
     user: schemas.UserCreate,
