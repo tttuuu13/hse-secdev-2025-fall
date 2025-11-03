@@ -1,6 +1,6 @@
 fastapi>=0.113.0
 starlette>=0.47.2
 uvicorn==0.30.5
-
 sqlalchemy
 pydantic-settings
+slowapi
