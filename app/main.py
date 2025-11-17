@@ -194,4 +194,10 @@ def delete_issue(
     return
 
 
+@app.get("/health", status_code=status.HTTP_200_OK)
+def health_check():
+    """Simple health check endpoint."""
+    return {"status": "ok"}
+
+
 app.include_router(router)
