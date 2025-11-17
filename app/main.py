@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import List, Optional
 
@@ -13,10 +14,14 @@ from .database import Base, engine, get_db
 from .domain import models
 from .limiter import limiter
 from .services.issue_service import IssueService
+from .services.label_service import LabelService
 from .services.user_service import UserService
 from .shared.errors import AppError, ConflictError, ForbiddenError, NotFoundError
 
 Base.metadata.create_all(bind=engine)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Bug Lite",
@@ -101,13 +106,27 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     correlation_id = str(uuid.uuid4())
+
+    logger.warning(
+        "Validation error occurred: %s. Correlation ID: %s",
+        exc.errors(),
+        correlation_id,
+    )
+
+    sanitized_errors = []
+    for error in exc.errors():
+        sanitized_error = error.copy()
+        if "input" in sanitized_error:
+            del sanitized_error["input"]
+        sanitized_errors.append(sanitized_error)
+
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
             "type": f"https://httpstatuses.com/{status.HTTP_422_UNPROCESSABLE_ENTITY}",
             "title": "Validation Error",
             "status": status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "detail": exc.errors(),
+            "detail": sanitized_errors,
             "instance": request.url.path,
             "correlation_id": correlation_id,
         },
@@ -135,6 +154,10 @@ def get_user_service(db: Session = Depends(get_db)) -> UserService:
     return UserService(db)
 
 
+def get_label_service(db: Session = Depends(get_db)) -> LabelService:
+    return LabelService(db)
+
+
 # Endpoints
 @router.post("/users/", response_model=schemas.User)
 @limiter.limit("100/minute")  # Updated rate limit as per ADR-002
@@ -144,6 +167,17 @@ def create_user(
     user_service: UserService = Depends(get_user_service),
 ):
     return user_service.create_user(user)
+
+
+@router.post("/labels/", response_model=schemas.Label)
+def create_label(
+    label: schemas.LabelCreate,
+    current_user: models.User = Depends(get_current_user),
+    label_service: LabelService = Depends(get_label_service),
+):
+    # Note: We don't use current_user for label creation in this minimal implementation,
+    # but we keep the dependency to ensure the user is authenticated (X-User-Id check).
+    return label_service.create_label(label)
 
 
 @router.post("/issues/", response_model=schemas.Issue)

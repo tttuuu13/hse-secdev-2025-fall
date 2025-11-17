@@ -1,11 +1,11 @@
 from datetime import datetime
 from typing import List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class LabelBase(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=100)
 
 
 class LabelCreate(LabelBase):
@@ -43,11 +43,11 @@ class Issue(IssueBase):
 
 class UserBase(BaseModel):
     username: str = Field(min_length=3, max_length=50)
-    email: str = Field(pattern=r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+    email: EmailStr
 
 
 class UserCreate(UserBase):
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=128)
 
 
 class User(UserBase):
