@@ -1,39 +1,109 @@
-name: CI
+name: CI/CD
+
 on:
   pull_request:
+    branches: [main]
   push:
     branches: [main]
+
 permissions:
   contents: read
+  actions: write
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  # Job 1: Build and Test Matrix
+  build_and_test:
+    name: Build & Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
-      - name: Install deps
+          python-version: ${{ matrix.python-version }}
+
+      - name: Configure Cache (C2)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt || true
+          # Install dev dependencies only for the test job
           pip install -r requirements-dev.txt || true
-          pip install ruff black isort pytest pre-commit pip-audit
-      - name: Lint & format
+
+      - name: Install Linters and Audit Tools
+        run: pip install ruff black isort pytest pre-commit pip-audit
+
+      - name: Run Linters & format check
         run: |
           ruff check --output-format=github .
           black --check .
           isort --check-only .
-      - name: Tests
-        run: pytest -q
+
+      - name: Run Tests with Coverage and JUnit XML (C4)
+        run: |
+          mkdir -p reports
+          pytest --cov=app --cov-report=xml --junitxml=reports/junit_py${{ matrix.python-version }}.xml -q
+
       - name: Scan dependencies for vulnerabilities
         run: pip-audit -r requirements.txt
+
+      - name: Upload Test Report Artifacts (C4)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-py${{ matrix.python-version }}
+          path: reports/
+
       - name: Pre-commit (all files)
         run: pre-commit run --all-files --show-diff-on-failure
+
+  # Job 2: Mock Deployment
+  mock_deploy:
+    name: Mock Deployment to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: build_and_test
+    environment:
+      name: staging
+      url: https://example.com
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Simulate Building Docker Image
+        run: |
+          echo "Simulating Docker build and push..."
+          # Mock the artifact build
+          echo "DOCKER_IMAGE_TAG=${{ github.sha }}" > build_details.txt
+
+      - name: Upload Mock Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-build-artifact
+          path: build_details.txt
+
+      - name: Mock Deployment Step
+        run: |
+          echo "Deploying to staging environment..."
+          echo "Using mock secret: ${{ secrets.MOCK_DEPLOY_SECRET }}"
+          echo "Deployment successful."
