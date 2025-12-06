@@ -1,0 +1,8 @@
+fastapi
+starlette
+uvicorn
+sqlalchemy
+pydantic-settings
+slowapi
+
+psycopg2-binary
