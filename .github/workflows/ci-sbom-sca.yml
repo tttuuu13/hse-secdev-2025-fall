@@ -1,0 +1,61 @@
+name: Security - SBOM & SCA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'requirements*.txt'
+      - '**/*.py'
+      - '.github/workflows/ci-sbom-sca.yml'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  sbom-sca:
+    name: SBOM & SCA Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create EVIDENCE/P09 directory
+        run: mkdir -p EVIDENCE/P09
+
+      # SBOM Generation
+      - name: Generate SBOM (CycloneDX JSON)
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/work -w /work anchore/syft:latest \
+            packages dir:. -o cyclonedx-json > EVIDENCE/P09/sbom.json
+
+      # SCA Analysis
+      - name: Run SCA Scan using Grype on SBOM
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/work -w /work anchore/grype:latest \
+            sbom:/work/EVIDENCE/P09/sbom.json -o json > EVIDENCE/P09/sca_report.json
+
+      - name: Generate SCA Summary Markdown
+        # Generating summary.md
+        run: |
+          echo "# SCA Vulnerability Summary" > EVIDENCE/P09/sca_summary.md
+          echo "" >> EVIDENCE/P09/sca_summary.md
+          echo "Vulnerability counts found in SBOM:" >> EVIDENCE/P09/sca_summary.md
+
+          # Count severities. If jq fails (e.g., no matches), we still want a file.
+          jq -r '
+            .matches |
+            group_by(.vulnerability.severity) |
+            map({(.[0].vulnerability.severity): length}) |
+            add |
+            to_entries |
+            .[] |
+            " * \(.key): \(.value)"
+          ' EVIDENCE/P09/sca_report.json >> EVIDENCE/P09/sca_summary.md || echo "No vulnerabilities found or error processing report." >> EVIDENCE/P09/sca_summary.md
+
+      # Upload Artifacts
+      - name: Upload SBOM and SCA artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: p09-sbom-sca-results-${{ github.sha }}
+          path: EVIDENCE/P09/

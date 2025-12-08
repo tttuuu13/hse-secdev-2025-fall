@@ -1,0 +1,9 @@
+# Policy waivers for dependency vulnerabilities
+# Format based on security advice: ID, dependency, severity, justification, expiry date (YYYY-MM-DD)
+waivers:
+  # Example waiver placeholder for a critical finding that requires manual review/fix
+  - vulnerability_id: "PLACEHOLDER-VULN-001"
+    dependency: "example-dependency"
+    severity: "Critical"
+    justification: "Waiver requested pending development of a fix or dependency update path."
+    expires: "2026-01-15"
