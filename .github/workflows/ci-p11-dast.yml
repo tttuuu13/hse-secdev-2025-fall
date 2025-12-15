@@ -1,0 +1,62 @@
+name: P11 - DAST (ZAP Baseline)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/ci-p11-dast.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zap-baseline:
+    name: OWASP ZAP Baseline Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure evidence directory exists
+        run: mkdir -p EVIDENCE/P11
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run app
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          timeout 30 bash -c 'until curl -sf http://localhost:8000/health; do sleep 1; done'
+          echo "Service is running and healthy"
+
+      - name: Run ZAP Baseline Scan
+        run: |
+          docker run --rm --network host -v $PWD:/zap/wrk owasp/zap2docker-stable \
+            zap-baseline.py \
+              -t http://localhost:8000 \
+              -r zap_baseline.html \
+              -J zap_baseline.json \
+              -d || true
+          mv zap_baseline.* EVIDENCE/P11/ || true
+
+      - name: Upload P11 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P11_EVIDENCE
+          path: EVIDENCE/P11
