@@ -1,0 +1,84 @@
+name: Security - IaC & Container (P12)
+
+on:
+  push:
+    branches: [ "p12-iac-container", "main" ]
+    paths:
+      - 'Dockerfile'
+      - 'iac/**'
+      - 'security/**'
+      - '.github/workflows/ci-p12-iac-container.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sec-check:
+    name: DevSecOps Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Create Evidence Dir
+        run: mkdir -p EVIDENCE/P12
+
+      # 1. Hadolint
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          config: security/hadolint.yaml
+          format: json
+          output-file: EVIDENCE/P12/hadolint_report.json
+          no-fail: true
+
+      # 2. Checkov
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: iac/
+          config_file: security/checkov.yaml
+          output_format: json
+          output_file_path: EVIDENCE/P12/checkov_report.json
+          soft_fail: true
+
+      - name: Rename Checkov Report
+        run: |
+          mv EVIDENCE/P12/checkov_report.json/results_json.json EVIDENCE/P12/checkov_report.json || true
+          rm -rf EVIDENCE/P12/checkov_report.json_results_json.json || true
+
+      # 3. Build & Trivy
+      - name: Build Image for Scan
+        run: docker build -t myapp:${{ github.sha }} .
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'myapp:${{ github.sha }}'
+          format: 'json'
+          output: 'EVIDENCE/P12/trivy_report.json'
+          severity: 'CRITICAL,HIGH'
+          trivy-config: 'security/trivy.yaml'
+          exit-code: '0'
+
+      # 4. Summary Generation
+      - name: Generate Short Summary
+        run: |
+          echo "# Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "Reports generated in EVIDENCE/P12/" >> $GITHUB_STEP_SUMMARY
+          echo "- Hadolint: $(cat EVIDENCE/P12/hadolint_report.json | jq length) issues" >> $GITHUB_STEP_SUMMARY
+          # Simple checks to see if files exist and have content
+          ls -lh EVIDENCE/P12/
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: P12_EVIDENCE
+          path: EVIDENCE/P12/*.json
