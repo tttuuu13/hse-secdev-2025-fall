@@ -2,8 +2,13 @@ name: P11 - DAST (ZAP Baseline)
 
 on:
   workflow_dispatch:
-  push:
+  pull_request:
     branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/ci-p11-dast.yml'
+  push:
+    branches: [main, p11-dast-zap]
     paths:
       - 'app/**'
       - '.github/workflows/ci-p11-dast.yml'
@@ -44,14 +49,15 @@ jobs:
           timeout 30 bash -c 'until curl -sf http://localhost:8000/health; do sleep 1; done'
           echo "Service is running and healthy"
 
-      - name: Run ZAP Baseline Scan
+      - name: Run ZAP API Scan
         run: |
-          docker run --rm --network host -v $PWD:/zap/wrk owasp/zap2docker-stable \
-            zap-baseline.py \
-              -t http://localhost:8000 \
+          docker run --rm --network host -u 0 -v $PWD:/zap/wrk zaproxy/zap-stable \
+            zap-api-scan.py \
+              -t http://localhost:8000/openapi.json \
+              -f openapi \
               -r zap_baseline.html \
               -J zap_baseline.json \
-              -d || true
+              || true
           mv zap_baseline.* EVIDENCE/P11/ || true
 
       - name: Upload P11 evidence
