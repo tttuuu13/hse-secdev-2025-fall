@@ -1,0 +1,10 @@
+scan:
+  scanners:
+    - vuln
+    - config
+    - secret
+  severity:
+    - CRITICAL
+    - HIGH
+format: "json"
+exit-code: 0
