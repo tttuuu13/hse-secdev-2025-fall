@@ -15,19 +15,37 @@ spec:
       labels:
         app: myapp
     spec:
-      # HARDENING 1: Pod Security Context
+      # FIX: CKV_K8S_38
+      automountServiceAccountToken: false
+      # FIX: CKV_K8S_31
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 3000
-        fsGroup: 2000
+        seccompProfile:
+          type: RuntimeDefault
+        runAsUser: 10001 # FIX: CKV_K8S_40
+        runAsGroup: 10001
+        fsGroup: 10001
         runAsNonRoot: true
       containers:
       - name: myapp
+        # FIX: CKV_K8S_15
         image: myapp:local
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
-        - containerPort: 8080
-        # HARDENING 2: Ограничение ресурсов
+        - containerPort: 8000
+        # FIX: CKV_K8S_8
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        # FIX: CKV_K8S_9
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
         resources:
           limits:
             memory: "256Mi"
@@ -35,7 +53,6 @@ spec:
           requests:
             memory: "128Mi"
             cpu: "200m"
-        # HARDENING 3: Container Security Context
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
